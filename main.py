@@ -2,11 +2,14 @@ import cv2
 import os
 import sys
 import getopt
+import time
 import numpy as np
 import matplotlib.pyplot as plt
 
-CLUSTER_COUNT = 4   ## 可调参
+CLUSTER_COUNT = 10   ## 可调参
+
 KEY_WORDS = ['arrow', 'back', 'close', 'add', 'indicator']
+
 TEST_CASES = ['ic_room_pick_heart_guest_pop_close',
               'hotline_exit_close_icon_pressed',
               'chat_send_gift_dialog_close',
@@ -86,16 +89,15 @@ def findImageEdge(image):
             break
     return topBound, leftBound, bottomBound, rightBound
 
+
 def getImagesPathsWith(dirPath):
     imagePathList = list()
     for item in os.listdir(dirPath):
         itemPath = dirPath + '/' + item
         if os.path.isfile(itemPath):
-            if itemPath.endswith('.png'):
-                if itemPath.endswith('2x.png'):  # 忽略3x图片，用2x即可
-                    # print(itemPath)
+            if itemPath.endswith('2x.png'):  # 忽略3x图片，用2x即可
+                imagePathList.append(itemPath)
 
-                    imagePathList.append(itemPath)
         else:
             subPathList = getImagesPathsWith(itemPath)
             if len(subPathList) > 0:
@@ -105,8 +107,30 @@ def getImagesPathsWith(dirPath):
     return imagePathList
 
 
-def generateStatisticsPage():
-    pass
+def generateStatisticsPage(resultInfo):
+    filePathWritten = './result_{}.html'.format(int(time.time()))
+    with open(filePathWritten, 'w') as file:
+        lines = list()
+        lines.append('<html>')
+        lines.append('  <body>')
+        for category, paths in resultInfo.items():
+            lines.append('      <h3>{}</h3>'.format(category))
+            lines.append('      <table>')
+            for path in paths:
+                pathSegments = path.split('/')
+                assert len(pathSegments) > 0
+                imageName = pathSegments[-2].replace('.imageset', '')
+                lines.append('          <tr>')
+                lines.append("              <td><img src='{}' /></td>".format(path))
+                lines.append("              <td>{}</td>".format(imageName))
+                lines.append('          </tr>')
+            lines.append('      </table>')
+            lines.append('      <hr>')
+        lines.append('  </body>')
+        lines.append('</html>')
+
+        file.writelines(lines)
+
 
 def generateImageDataAt(path):
     image = cv2.imread(path, cv2.IMREAD_UNCHANGED)
@@ -114,21 +138,22 @@ def generateImageDataAt(path):
         print('image is None')
         return None
     
-    # image = cv2.resize(image, (18, 18), interpolation=cv2.INTER_CUBIC)
-    bChannel, gChannel, rChannel, alpahChannel = cv2.split(image)
+    a0, a1, a2 = image.shape
+    if a2 == 4: # 有些图片可能没alpha通道
+        bChannel, gChannel, rChannel, alpahChannel = cv2.split(image)
     # print('alpha: ', alpahChannel)
 
     ## 先做高斯模糊，使图片像素分布更加平滑，增加计算容忍度
     imageBlur = cv2.GaussianBlur(image, (3, 3), 1)
     imageGray = cv2.cvtColor(imageBlur, cv2.COLOR_BGR2GRAY)
-    if checkMayUseAlpha(alpahChannel):
+    if a2 == 4 and checkMayUseAlpha(alpahChannel):
         alpha = 0.7  # 可调参
         imageGray = np.int16((1 - alpha) * imageGray + alpha * alpahChannel)
     # print('imageGray: ', imageGray)
 
     ## 有的图可能灰度之后全是黑色（如c9_8.png），可考虑其alpha通道（png图有RGBA四通道）
     ## 有时不得不考虑下alpha通道（如hotline_exit_close_icon_pressed@2x.png，其alpha通道才正确反映轮廓特征，反而RGB不能）
-    if isAllBlackImage(imageGray):
+    if a2 == 4 and isAllBlackImage(imageGray):
         # print('path', path)
         imageGray = alpahChannel
         imageGray = cv2.GaussianBlur(imageGray, (3, 3), 1)
@@ -141,6 +166,12 @@ def generateImageDataAt(path):
     sobely = cv2.convertScaleAbs(sobely)
     imageDxy = cv2.addWeighted(sobelx, 0.5, sobely, 0.5, 0)
     # print('imageDxy: ', imageDxy)
+
+    # Test
+    # imageTest = cv2.resize(imageDxy, (18, 18), interpolation=cv2.INTER_CUBIC) 
+    # print('file: ', path)
+    # print(imageTest)
+    ## Test
 
     imageNew = np.zeros(imageDxy.shape, dtype=np.int16)
     for i, rowList in enumerate(imageDxy):
@@ -191,40 +222,52 @@ def app(argv):
         print('Input path is none!')
         sys.exit()
 
-    # imagePathList = getImagesPathsWith(inputPath)
-    # imagePathListClean = list()
-    # imageNameList = list()
-    # imageList = list()
-    # for filePath in imagePathList:
-    #     pathSegments = filePath.split('/')
 
-    #     assert len(pathSegments) > 0
-
-    #     imageName = pathSegments[-2].replace('.imageset', '')
-        
-    #     # 尝试再过滤一下
-    #     found = False
-    #     for keyWord in TEST_CASES:
-    #         if keyWord in imageName:
-    #             print(filePath)
-    #             imageNameList.append(imageName)
-    #             imagePathListClean.append(filePath)
-
-    # print('Total images: {}, names: {}'.format(len(imagePathListClean), len(imageNameList)))
-
-    # for filename in imagePathListClean:
-    #     imageData = generateImageDataAt(filePath)
-    #     if imageData is not None:
-    #         imageList.append(imageData)
-
-    imageList = list()
+    imagePathList = getImagesPathsWith(inputPath)
+    imagePathListClean = list()
     imageNameList = list()
-    for filename in os.listdir('./data1/'):
-        filePath = './data1/' + filename
+    imageList = list()
+    for filePath in imagePathList:
+        pathSegments = filePath.split('/')
+        assert len(pathSegments) > 0
+        imageName = pathSegments[-2].replace('.imageset', '')
+        
+        # 过滤一下
+        found = False
+        for keyWord in KEY_WORDS:
+            if keyWord in imageName.lower():
+                imageNameList.append(imageName)
+                imagePathListClean.append(filePath)
+        # imageNameList.append(imageName)
+        # imagePathListClean.append(filePath)
+    print('Total images: {}, names: {}'.format(len(imagePathListClean), len(imageNameList)))
+
+    # 再过滤一下
+    imagePathListClean2 = list()
+    imageNameList2 = list()
+    for filePath, imageName in zip(imagePathListClean, imageNameList):  
+        imageCheck = cv2.imread(filePath, cv2.IMREAD_UNCHANGED)
+        a0, a1, a2 = imageCheck.shape
+        if a0 > 120 or a1 > 120:  # 暂不考虑较大尺寸的图
+            continue
+
+        imagePathListClean2.append(filePath)
+        imageNameList2.append(imageName)
+    print('Total images2: {}, names2: {}'.format(len(imagePathListClean2), len(imageNameList2)))
+
+    for filePath in imagePathListClean2:
         imageData = generateImageDataAt(filePath)
         if imageData is not None:
             imageList.append(imageData)
-            imageNameList.append(filename)
+
+    # imageList = list()
+    # imageNameList = list()
+    # for filename in os.listdir('./data1/'):
+    #     filePath = './data1/' + filename
+    #     imageData = generateImageDataAt(filePath)
+    #     if imageData is not None:
+    #         imageList.append(imageData)
+    #         imageNameList.append(filename)
 
     imageArr = np.array(imageList)
     # print(imageArr.shape)
@@ -237,8 +280,8 @@ def app(argv):
                                       attempts=20,
                                       flags=cv2.KMEANS_RANDOM_CENTERS
                                       )
-    print('centers: ', centers.shape)
-    print('label: ', labels.flatten().shape)
+    # print('centers: ', centers.shape)
+    # print('label: ', labels.flatten().shape)
 
     result = dict()
     for index, l in enumerate(labels.flatten()):
@@ -247,13 +290,14 @@ def app(argv):
         if groupList is None:
             groupList = list()
             result[k] = groupList
-        groupList.append(imageNameList[index])
+        groupList.append(imagePathListClean2[index])
     
-    for key, value in result.items():
-        # if len(value) > 1:
-        print('key: ', key)
-        print(value)
-        
+    # for key, value in result.items():
+    #     print('key: ', key)
+    #     print(value)
+    
+    generateStatisticsPage(result)
+    print('Done!')
 
 
 def test3():
@@ -280,4 +324,4 @@ def test3():
 if __name__ == '__main__':
     app(sys.argv[1:])
     # test3()
-    generateImageDataAt('./data2/hotline_exit_close_icon_pressed@2x.png')
+    # generateImageDataAt('./data2/hotline_exit_close_icon_pressed@2x.png')
