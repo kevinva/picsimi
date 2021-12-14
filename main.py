@@ -112,7 +112,7 @@ def generateStatisticsPage(resultInfo):
     with open(filePathWritten, 'w') as file:
         lines = list()
         lines.append('<html>')
-        lines.append('  <body>')
+        lines.append('  <body style="background-color:rgba(204, 102, 0, 0.25)">')
         for category, paths in resultInfo.items():
             lines.append('      <h3>{}</h3>'.format(category))
             lines.append('      <table>')
