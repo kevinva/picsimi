@@ -8,6 +8,8 @@ import matplotlib.pyplot as plt
 
 CLUSTER_COUNT = 10   ## 可调参
 
+SCAN_ALL = False  # 主要扫描全部图片，聚类数目最好改改
+
 KEY_WORDS = ['arrow', 'back', 'close', 'add', 'indicator']
 
 TEST_CASES = ['ic_room_pick_heart_guest_pop_close',
@@ -232,27 +234,33 @@ def app(argv):
         assert len(pathSegments) > 0
         imageName = pathSegments[-2].replace('.imageset', '')
         
-        # 过滤一下
-        found = False
-        for keyWord in KEY_WORDS:
-            if keyWord in imageName.lower():
-                imageNameList.append(imageName)
-                imagePathListClean.append(filePath)
-        # imageNameList.append(imageName)
-        # imagePathListClean.append(filePath)
+        if SCAN_ALL:
+            imageNameList.append(imageName)
+            imagePathListClean.append(filePath)
+        else:
+            # 过滤一下
+            for keyWord in KEY_WORDS:
+                if keyWord in imageName.lower():
+                    imageNameList.append(imageName)
+                    imagePathListClean.append(filePath)
+
     print('Total images: {}, names: {}'.format(len(imagePathListClean), len(imageNameList)))
 
     # 再过滤一下
-    imagePathListClean2 = list()
-    imageNameList2 = list()
-    for filePath, imageName in zip(imagePathListClean, imageNameList):  
-        imageCheck = cv2.imread(filePath, cv2.IMREAD_UNCHANGED)
-        a0, a1, a2 = imageCheck.shape
-        if a0 > 120 or a1 > 120:  # 暂不考虑较大尺寸的图
-            continue
+    if SCAN_ALL:
+        imagePathListClean2 = imagePathListClean
+        imageNameList2 = imageNameList
+    else:
+        imagePathListClean2 = list()
+        imageNameList2 = list()
+        for filePath, imageName in zip(imagePathListClean, imageNameList):  
+            imageCheck = cv2.imread(filePath, cv2.IMREAD_UNCHANGED)
+            a0, a1, a2 = imageCheck.shape
+            if a0 > 120 or a1 > 120:  # 暂不考虑较大尺寸的图
+                continue
 
-        imagePathListClean2.append(filePath)
-        imageNameList2.append(imageName)
+            imagePathListClean2.append(filePath)
+            imageNameList2.append(imageName)
     print('Total images2: {}, names2: {}'.format(len(imagePathListClean2), len(imageNameList2)))
 
     for filePath in imagePathListClean2:
